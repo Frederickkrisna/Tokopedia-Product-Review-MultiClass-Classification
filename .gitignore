@@ -1,10 +1,12 @@
-# Models - Large files should not be committed to git
+# Models
 models/
 *.pkl
 *.safetensors
 *.bin
 *.json
 *.txt
+
+!requirements.txt
 
 # VS Code
 .vscode/
