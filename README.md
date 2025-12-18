@@ -18,15 +18,14 @@ This project implements a **multi-class text classification system** for Indones
 
 ### Model Performance Comparison
 
-| Model | Accuracy | F1-Macro | F1-Weighted |
-|-------|----------|----------|-------------|
-| SVM Baseline | 85% | 83% | 85% |
-| SVM Tuned | 89% | 87% | 89% |
-| **SVM Tuned Balanced** | 89% | **88%** | 89% |
-| IndoBERT Baseline | 91% | 90% | 91% |
-| IndoBERT Baseline Balanced | 91% | 90% | 91% |
-| IndoBERT Tuned | 93% | 92% | 93% |
-| **IndoBERT Tuned Balanced** | **93%** | **93%** | **93%** |
+| Model | Accuracy | Precision | Recall | F1-Macro | F1-Weighted |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| SVM Baseline | 82.52% | 84.78% | 82.52% | 63.41% | 83.47% |
+| SVM Tuned | 83.34% | 84.96% | 83.34% | 63.87% | 83.99% |
+| SVM Tuned Balanced | 83.34% | 84.96% | 83.34% | 63.87% | 83.99% |
+| IndoBERT-p2 Baseline | 92.14% | 90.96% | 92.14% | 76.27% | 91.43% |
+| **IndoBERT-p2 Tuned** | **92.33%** | **91.25%** | **92.33%** | **76.91%** | **91.70%** |
+| IndoBERT-p2 Tuned Balanced | 86.53% | 90.77% | 86.53% | 74.49% | 88.22% |
 
 > **Note**: Balanced models show improved performance on minority classes (Saran, Lainnya)
 
