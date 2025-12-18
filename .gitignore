@@ -1,0 +1,14 @@
+# Models - Large files should not be committed to git
+models/
+*.pkl
+*.safetensors
+*.bin
+*.json
+*.txt
+
+# VS Code
+.vscode/
+*.settings.json
+
+# dataset
+*.csv
