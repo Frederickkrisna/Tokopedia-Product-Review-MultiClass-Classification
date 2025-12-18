@@ -20,6 +20,7 @@ scikit-learn>=1.3.0
 joblib>=1.3.0
 tqdm>=4.65.0
 regex>=2023.0.0
+gdown
 
 # Deep Learning (Standard CPU version for Cloud Deployment)
 # Note: Streamlit Cloud runs on CPU, so specific CUDA versions are removed to avoid errors.

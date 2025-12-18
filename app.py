@@ -4,6 +4,9 @@ import numpy as np
 import joblib
 import plotly.graph_objects as go
 import re
+import os
+import gdown
+import zipfile
 
 # NLP and ML
 from sklearn.preprocessing import LabelEncoder
@@ -21,6 +24,22 @@ try:
 except:
     pass
 
+GDRIVE_FILES = {
+    'df_clean.csv': '1kpWfTaKkfsR5Zn4VjU7dWIQoo4s5u8BI',
+    
+    # ML Models (.pkl files)
+    'models/tfidf_vectorizer.pkl': '1yP8bdtullMUyIi5h6MfJEyoWMm2uEvXD',
+    'models/svm_baseline.pkl': '1HVSXK8J6lMmlmj-oS-u4Ti4EgcwqxkW5',
+    'models/svm_tuned.pkl': '1oNY9aeCe6QAFlNqpH2I69ah-P61qLw5x',
+    'models/svm_tuned_balanced.pkl': '1tkv2Z-iKuzfC6gFbD8VtwQBVK7GcXZ7J',
+    
+    # Deep Learning Models (Harus file .zip di GDrive karena aslinya folder)
+    # Nanti script akan otomatis unzip ke folder models/
+    'models/indobert_p2_baseline': '1npiyLIR8ab9XIdQ7R-cZA_zWRt2z6CbH',
+    'models/indobert_p2_tuned': '1VXBYh6tdyC4geXzaKWXyro4wQOKqlNi6',
+    'models/indobert_p2_tuned_balanced': '1VrVAlEBljKZJHr7TuLoF0knTr9wIEWYA',
+}
+
 # ===== PAGE CONFIG =====
 st.set_page_config(
     page_title="Tokopedia Review Classifier",
@@ -37,7 +56,7 @@ st.markdown("""
         --primary-color: #42B549;
         --secondary-color: #00854D;
     }
-    
+
     /* Header styling */
     .main-header {
         background: linear-gradient(135deg, #42B549, #00854D);
@@ -48,7 +67,7 @@ st.markdown("""
         margin-bottom: 2rem;
         box-shadow: 0 4px 12px rgba(66, 181, 73, 0.3);
     }
-    
+
     /* Metric cards */
     .metric-card {
         background-color: white;
@@ -58,12 +77,12 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         transition: transform 0.3s ease;
     }
-    
+
     .metric-card:hover {
         transform: translateY(-5px);
         box-shadow: 0 4px 16px rgba(66, 181, 73, 0.3);
     }
-    
+
     /* Result box */
     .result-box {
         background: linear-gradient(135deg, #F0FDF4, #DCFCE7);
@@ -73,7 +92,7 @@ st.markdown("""
         text-align: center;
         margin: 1rem 0;
     }
-    
+
     .result-text {
         font-size: 28px;
         font-weight: bold;
@@ -90,19 +109,19 @@ st.markdown("""
         font-weight: bold;
         transition: all 0.3s ease;
     }
-    
+
     .stButton>button:hover {
         background: linear-gradient(135deg, #00854D, #42B549);
         box-shadow: 0 4px 12px rgba(66, 181, 73, 0.4);
         transform: translateY(-2px);
     }
-    
+
     /* Tab styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
         background-color: transparent;
     }
-    
+
     .stTabs [data-baseweb="tab"] {
         background-color: #f0f2f6;
         border-radius: 8px 8px 0 0;
@@ -110,13 +129,13 @@ st.markdown("""
         font-weight: 600;
         border: 2px solid transparent;
     }
-    
+
     .stTabs [aria-selected="true"] {
         background: linear-gradient(135deg, #42B549, #00854D);
         color: white;
         border-color: #42B549;
     }
-    
+
     /* Info boxes */
     .info-box {
         background-color: #F0FDF4;
@@ -125,11 +144,11 @@ st.markdown("""
         border-left: 4px solid #42B549;
         margin: 1rem 0;
     }
-    
+
     /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    
+
     /* Hide sidebar */
     [data-testid="stSidebar"] {
         display: none;
@@ -145,10 +164,53 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 stemmer_factory = StemmerFactory()
 stemmer = stemmer_factory.create_stemmer()
 
+# ===== HELPER: DOWNLOAD FUNCTION =====
+def download_files_from_drive():
+    
+    # Buat folder models jika belum ada
+    if not os.path.exists('models'):
+        os.makedirs('models')
+
+    for local_path, file_id in GDRIVE_FILES.items():
+        # Cek apakah ID sudah diisi user
+        if 'MASUKKAN_ID' in file_id:
+            continue
+            
+        # Cek apakah file/folder sudah ada di sistem, jika ada skip download
+        if os.path.exists(local_path):
+            continue
+
+        print(f"Downloading {local_path} from Drive...")
+        
+        url = f'https://drive.google.com/uc?id={file_id}'
+        
+        # Logika khusus untuk IndoBERT (karena folder, kita download ZIP lalu extract)
+        if 'indobert' in local_path:
+            zip_output = local_path + ".zip"
+            # Download file ZIP
+            gdown.download(url, zip_output, quiet=False)
+            
+            # Extract file ZIP
+            if os.path.exists(zip_output):
+                try:
+                    with zipfile.ZipFile(zip_output, 'r') as zip_ref:
+                        zip_ref.extractall("models/") # Extract ke dalam folder models
+                    os.remove(zip_output) # Hapus file zip sampah setelah extract
+                except zipfile.BadZipFile:
+                    st.error(f"Gagal ekstrak {local_path}. Pastikan file di GDrive adalah .zip yang valid.")
+        else:
+            # Untuk file biasa (.pkl / .csv)
+            gdown.download(url, local_path, quiet=False)
+
 # ===== MODEL MANAGER =====
 @st.cache_resource
 def load_models():
     """Load all models and dataset (cached)"""
+    
+    # 1. DOWNLOAD FILES DULU SEBELUM LOAD
+    with st.spinner('Sedang mendownload model dari Google Drive... (Harap tunggu, hanya di awal)'):
+        download_files_from_drive()
+
     model_data = {
         'df_clean': None,
         'label_encoder': None,
@@ -168,76 +230,76 @@ def load_models():
     
     # Load dataset
     try:
-        model_data['df_clean'] = pd.read_csv('df_clean.csv', encoding='utf-8')
-        model_data['label_encoder'] = LabelEncoder()
-        model_data['label_encoder'].fit(model_data['df_clean']['label'].values)
-        st.sidebar.success(f"✓ Dataset: {len(model_data['df_clean']):,} reviews")
+        if os.path.exists('df_clean.csv'):
+            model_data['df_clean'] = pd.read_csv('df_clean.csv', encoding='utf-8')
+            model_data['label_encoder'] = LabelEncoder()
+            model_data['label_encoder'].fit(model_data['df_clean']['label'].values)
+            st.sidebar.success(f"✓ Dataset: {len(model_data['df_clean']):,} reviews")
+        else:
+            raise FileNotFoundError("File df_clean.csv tidak ditemukan setelah download.")
     except Exception as e:
         st.sidebar.warning(f"⚠ Dataset load failed: {e}")
+        # Dummy data fallback agar app tidak crash
         model_data['df_clean'] = pd.DataFrame({'label': ['Pujian', 'Kritik', 'Saran', 'Informasi/Netral', 'Lainnya']})
         model_data['label_encoder'] = LabelEncoder()
         model_data['label_encoder'].fit(['Pujian', 'Kritik', 'Saran', 'Informasi/Netral', 'Lainnya'])
     
     # Load SVM models
     try:
-        model_data['tfidf_vectorizer'] = joblib.load('models/tfidf_vectorizer.pkl')
-        model_data['svm_baseline'] = joblib.load('models/svm_baseline.pkl')
-        model_data['svm_tuned'] = joblib.load('models/svm_tuned.pkl')
-        try:
+        if os.path.exists('models/tfidf_vectorizer.pkl'):
+            model_data['tfidf_vectorizer'] = joblib.load('models/tfidf_vectorizer.pkl')
+        if os.path.exists('models/svm_baseline.pkl'):
+            model_data['svm_baseline'] = joblib.load('models/svm_baseline.pkl')
+        if os.path.exists('models/svm_tuned.pkl'):
+            model_data['svm_tuned'] = joblib.load('models/svm_tuned.pkl')
+        if os.path.exists('models/svm_tuned_balanced.pkl'):
             model_data['svm_tuned_balanced'] = joblib.load('models/svm_tuned_balanced.pkl')
-        except:
-            pass
+            
         st.sidebar.success("✓ SVM models loaded")
     except Exception as e:
-        st.sidebar.warning(f"⚠ SVM models not found: {e}")
+        st.sidebar.warning(f"⚠ SVM models error: {e}")
     
     # Load IndoBERT models
     indobert_loaded = 0
     
+    # Fungsi helper untuk load BERT aman
+    def load_bert(path, name):
+        if os.path.exists(path):
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(path)
+                model = AutoModelForSequenceClassification.from_pretrained(path)
+                model.to(device)
+                model.eval()
+                return model, tokenizer, True
+            except Exception as e:
+                print(f"Error loading {name}: {e}")
+                return None, None, False
+        return None, None, False
+
     # Baseline
-    try:
-        model_data['tokenizer_indobert_baseline'] = AutoTokenizer.from_pretrained('./models/indobert_p2_baseline')
-        model_data['model_indobert_baseline'] = AutoModelForSequenceClassification.from_pretrained('./models/indobert_p2_baseline')
-        model_data['model_indobert_baseline'].to(device)
-        model_data['model_indobert_baseline'].eval()
-        indobert_loaded += 1
-    except:
-        pass
+    model_data['model_indobert_baseline'], model_data['tokenizer_indobert_baseline'], success = \
+        load_bert('./models/indobert_p2_baseline', 'IndoBERT Baseline')
+    if success: indobert_loaded += 1
     
     # Baseline Balanced
-    try:
-        model_data['tokenizer_indobert_baseline_balanced'] = AutoTokenizer.from_pretrained('./models/indobert_p2_baseline_balanced')
-        model_data['model_indobert_baseline_balanced'] = AutoModelForSequenceClassification.from_pretrained('./models/indobert_p2_baseline_balanced')
-        model_data['model_indobert_baseline_balanced'].to(device)
-        model_data['model_indobert_baseline_balanced'].eval()
-        indobert_loaded += 1
-    except:
-        pass
+    model_data['model_indobert_baseline_balanced'], model_data['tokenizer_indobert_baseline_balanced'], success = \
+        load_bert('./models/indobert_p2_baseline_balanced', 'IndoBERT Baseline Balanced')
+    if success: indobert_loaded += 1
     
     # Tuned
-    try:
-        model_data['tokenizer_indobert'] = AutoTokenizer.from_pretrained('./models/indobert_p2_tuned')
-        model_data['model_indobert'] = AutoModelForSequenceClassification.from_pretrained('./models/indobert_p2_tuned')
-        model_data['model_indobert'].to(device)
-        model_data['model_indobert'].eval()
-        indobert_loaded += 1
-    except:
-        pass
+    model_data['model_indobert'], model_data['tokenizer_indobert'], success = \
+        load_bert('./models/indobert_p2_tuned', 'IndoBERT Tuned')
+    if success: indobert_loaded += 1
     
     # Tuned Balanced
-    try:
-        model_data['tokenizer_indobert_tuned_balanced'] = AutoTokenizer.from_pretrained('./models/indobert_p2_tuned_balanced')
-        model_data['model_indobert_tuned_balanced'] = AutoModelForSequenceClassification.from_pretrained('./models/indobert_p2_tuned_balanced')
-        model_data['model_indobert_tuned_balanced'].to(device)
-        model_data['model_indobert_tuned_balanced'].eval()
-        indobert_loaded += 1
-    except:
-        pass
+    model_data['model_indobert_tuned_balanced'], model_data['tokenizer_indobert_tuned_balanced'], success = \
+        load_bert('./models/indobert_p2_tuned_balanced', 'IndoBERT Tuned Balanced')
+    if success: indobert_loaded += 1
     
     if indobert_loaded > 0:
         st.sidebar.success(f"✓ {indobert_loaded} IndoBERT model(s) loaded on {device}")
     else:
-        st.sidebar.warning("⚠ No IndoBERT models found")
+        st.sidebar.warning("⚠ No IndoBERT models found (Check Google Drive IDs)")
     
     return model_data
 
@@ -268,7 +330,7 @@ def make_prediction(text, model_name, model_data):
         
         if model_name.startswith('SVM'):
             if model_data['tfidf_vectorizer'] is None:
-                return None, None, "Model SVM belum dimuat"
+                return None, None, "Model SVM belum terdownload/dimuat."
             
             if model_name == 'SVM Baseline':
                 model = model_data['svm_baseline']
@@ -276,8 +338,9 @@ def make_prediction(text, model_name, model_data):
                 model = model_data['svm_tuned']
             elif model_name == 'SVM Tuned Balanced':
                 model = model_data['svm_tuned_balanced']
-                if model is None:
-                    return None, None, "Model SVM Tuned Balanced belum dimuat"
+            
+            if model is None:
+                 return None, None, f"Model {model_name} tidak ditemukan (Cek Drive ID)"
             
             X_tfidf = model_data['tfidf_vectorizer'].transform([preprocessed])
             prediction = model.predict(X_tfidf)[0]
@@ -304,7 +367,7 @@ def make_prediction(text, model_name, model_data):
                 model = model_data['model_indobert_tuned_balanced']
             
             if model is None or tokenizer is None:
-                return None, None, f"Model {model_name} belum dimuat"
+                return None, None, f"Model {model_name} belum terdownload (Cek Drive ID)"
             
             inputs = tokenizer(
                 text, 
@@ -398,10 +461,10 @@ def create_label_dist_chart(df_clean):
 def create_model_perf_chart():
     """Create model performance comparison"""
     df = pd.DataFrame({
-        'Model': ['SVM Baseline', 'SVM Tuned', 'SVM Tuned Bal.', 'IndoBERT Base', 'IndoBERT Base Bal.', 'IndoBERT Tuned', 'IndoBERT Tuned Bal.'],
-        'Accuracy': [0.85, 0.89, 0.89, 0.91, 0.91, 0.93, 0.93],
-        'F1-Macro': [0.83, 0.87, 0.88, 0.90, 0.90, 0.92, 0.93],
-        'F1-Weighted': [0.85, 0.89, 0.89, 0.91, 0.91, 0.93, 0.93]
+        'Model': ['SVM Baseline', 'SVM Tuned', 'SVM Tuned Bal.', 'IndoBERT Base', 'IndoBERT Tuned', 'IndoBERT Tuned Bal.'],
+        'Accuracy': [0.8252, 0.8334, 0.8334, 0.9214, 0.9233, 0.8653],
+        'F1-Macro': [0.6341, 0.6387, 0.6387, 0.7627, 0.7691, 0.7449],
+        'F1-Weighted': [0.8347, 0.8399, 0.8399, 0.9143, 0.9170, 0.8822]
     })
     
     fig = go.Figure()
@@ -491,7 +554,6 @@ def main():
     2. **SVM Tuned** - SVM optimal dengan GridSearchCV
     3. **SVM Tuned Balanced** - SVM dengan class weights untuk handle imbalanced data
     4. **IndoBERT-p2 Baseline** - Pre-trained Indonesian BERT
-    5. **IndoBERT-p2 Baseline Balanced** - IndoBERT baseline dengan class weights
     6. **IndoBERT-p2 Tuned** - Fine-tuned IndoBERT
     7. **IndoBERT-p2 Tuned Balanced** - Fine-tuned IndoBERT dengan class weights (performa terbaik pada minority class)
     """)
@@ -523,13 +585,6 @@ def main():
         - Netral    : "Barang sudah sampai dan sudah saya terima"
         """)
         
-        examples = [
-            ("Pujian", "Produk bagus, pengiriman cepat, packing rapi. Sangat puas!"),
-            ("Kritik", "Barang rusak, pengiriman lama. Sangat kecewa!"),
-            ("Saran", "Produk bagus tapi sebaiknya packing lebih rapi lagi."),
-            ("Netral", "Barang sudah sampai sesuai pesanan.")
-        ]
-        
         if 'input_text' not in st.session_state:
             st.session_state.input_text = "Produk bagus, pengiriman cepat, packing rapi. Sangat puas!"
         
@@ -543,13 +598,12 @@ def main():
         
         # Model selection
         model_name = st.selectbox(
-            "🤖 Pilih Model:",
+            "Pilih Model:",
             [
                 "SVM Baseline", 
                 "SVM Tuned", 
                 "SVM Tuned Balanced",
                 "IndoBERT-p2 Baseline", 
-                "IndoBERT-p2 Baseline Balanced",
                 "IndoBERT-p2 Tuned", 
                 "IndoBERT-p2 Tuned Balanced"
             ],
