@@ -450,7 +450,7 @@ def main():
     with col2:
         st.metric("Jumlah Kategori/label", total_categories)
     with col3:
-        st.metric("Jumlah Models", "7")
+        st.metric("Jumlah Models", "6")
     
     st.markdown("---")
     
